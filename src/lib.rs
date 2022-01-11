@@ -291,7 +291,7 @@ fn check_aseprite_data(
 }
 
 /// A tag representing an animation
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct AsepriteTag(&'static str);
 
 impl std::ops::Deref for AsepriteTag {
@@ -573,6 +573,7 @@ impl AsepriteAnimation {
                 let tag = if let Some(tag) = tags.get_by_name(name) {
                     tag
                 } else {
+                    error!("Tag {} not found!", name);
                     return (0, false);
                 };
 
@@ -580,10 +581,10 @@ impl AsepriteAnimation {
                 match tag.animation_direction {
                     aseprite_reader::raw::AsepriteAnimationDirection::Forward => {
                         let next_frame = current_frame + 1;
-                        if range.contains(&(next_frame as u16)) {
+                        if range.contains(&(current_frame as u16)) {
                             return (next_frame, false);
                         } else {
-                            return (0, false);
+                            return (range.start as usize, false);
                         }
                     }
                     aseprite_reader::raw::AsepriteAnimationDirection::Reverse => {
@@ -616,6 +617,19 @@ impl AsepriteAnimation {
                 }
             }
             AsepriteAnimation::None => (0, false),
+        }
+    }
+
+    /// Set animation to play given tag
+    pub fn set_tag(&mut self, tag: AsepriteTag) {
+        *self = Self::Tag { tag };
+    }
+
+    /// Check if animation is using given tag
+    pub fn is_tag(&self, t: AsepriteTag) -> bool {
+        match self {
+            Self::Tag{ tag } => *tag == t,
+            _ => false,
         }
     }
 }
