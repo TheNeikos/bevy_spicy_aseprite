@@ -44,7 +44,7 @@ enum AsepriteSystems {
 }
 
 impl Plugin for AsepritePlugin {
-    fn build(&self, app: &mut bevy::prelude::App) {
+    fn build(&self, app: &mut bevy::prelude::AppBuilder) {
         app.add_asset::<AsepriteImage>()
             .add_asset_loader(AsepriteLoader)
             .add_system(
@@ -52,7 +52,7 @@ impl Plugin for AsepritePlugin {
                     .system()
                     .before(AsepriteSystems::UpdateAnim),
             )
-            .add_system(load_aseprites)
+            .add_system(load_aseprites.system())
             .add_system(
                 update_animations
                     .system()

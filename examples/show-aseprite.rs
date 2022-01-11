@@ -12,11 +12,11 @@ mod sprites {
 fn main() {
     tracing_log::LogTracer::init().unwrap();
 
-    App::new()
+    App::build()
         .add_plugins(DefaultPlugins)
         .add_plugin(AsepritePlugin)
-        .add_startup_system(setup)
-        .add_system(toggle_sprite)
+        .add_startup_system(setup.system())
+        .add_system(toggle_sprite.system())
         .run();
 }
 
