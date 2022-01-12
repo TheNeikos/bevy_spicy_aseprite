@@ -81,19 +81,21 @@ fn update_animations(
         let image = if let Some(image) = aseprite_image_assets.get(aseprite_handle.clone_weak()) {
             image
         } else {
+            error!("Can get image from aseprite image assets");
             continue;
         };
 
         let mut added_time = Some(time.delta().as_millis() as u64);
 
         loop {
-            let (current_frame_idx, forward, rest_time) = match &mut *aseprite_animation_state {
+            let (current_frame_idx, forward, rest_time, animation) = match &mut *aseprite_animation_state {
                 AsepriteAnimationState::Paused { .. } => break,
                 AsepriteAnimationState::Playing {
                     current_frame,
                     forward,
                     time_elapsed,
-                } => (current_frame, forward, time_elapsed),
+                    animation,
+                } => (current_frame, forward, time_elapsed, animation),
             };
 
             let frame_info =
@@ -105,6 +107,16 @@ fn update_animations(
 
             if let Some(added_time) = added_time.take() {
                 *rest_time += added_time;
+            }
+
+            if *aseprite_animation != *animation {
+                *animation = *aseprite_animation;
+
+                let (next_frame_idx, switch_direction) =
+                    aseprite_animation.get_next_frame(image, *current_frame_idx, *forward);
+
+                *current_frame_idx = next_frame_idx;
+                break;
             }
 
             if *rest_time >= frame_info.delay_ms as u64 {
@@ -539,7 +551,7 @@ impl AsepriteInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 /// An aseprite animation
 pub enum AsepriteAnimation {
     /// The animation is defined as in this tag
@@ -652,10 +664,12 @@ pub enum AsepriteAnimationState {
         current_frame: usize,
         forward: bool,
         time_elapsed: u64,
+        animation: AsepriteAnimation,
     },
     Paused {
         current_frame: usize,
         forward: bool,
+        animation: AsepriteAnimation,
     },
 }
 
@@ -678,11 +692,13 @@ impl AsepriteAnimationState {
             AsepriteAnimationState::Paused {
                 current_frame,
                 forward,
+                animation,
             } => {
                 *self = AsepriteAnimationState::Playing {
                     current_frame: *current_frame,
                     forward: *forward,
                     time_elapsed: 0,
+                    animation: *animation,
                 }
             }
         }
@@ -695,11 +711,13 @@ impl AsepriteAnimationState {
             AsepriteAnimationState::Playing {
                 current_frame,
                 forward,
+                animation,
                 ..
             } => {
                 *self = AsepriteAnimationState::Paused {
                     current_frame: *current_frame,
                     forward: *forward,
+                    animation: *animation,
                 }
             }
         }
@@ -721,21 +739,25 @@ impl AsepriteAnimationState {
             AsepriteAnimationState::Playing {
                 current_frame,
                 forward,
+                animation,
                 ..
             } => {
                 *self = Self::Paused {
                     current_frame: *current_frame,
                     forward: *forward,
+                    animation: *animation,
                 };
             }
             AsepriteAnimationState::Paused {
                 current_frame,
                 forward,
+                animation,
             } => {
                 *self = Self::Playing {
                     current_frame: *current_frame,
                     forward: *forward,
                     time_elapsed: 0,
+                    animation: *animation,
                 };
             }
         }
@@ -748,6 +770,7 @@ impl Default for AsepriteAnimationState {
             current_frame: 0,
             forward: true,
             time_elapsed: 0,
+            animation: AsepriteAnimation::None,
         }
     }
 }
