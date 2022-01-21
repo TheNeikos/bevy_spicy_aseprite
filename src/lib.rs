@@ -38,8 +38,12 @@ pub use bevy_spicy_aseprite_derive::aseprite;
 /// The required plugin to fully use your aseprite files
 pub struct AsepritePlugin;
 
+/// System stages of AsepritePlugin
 #[derive(Debug, SystemLabel, Clone, Hash, PartialEq, Eq)]
-enum AsepriteSystems {
+pub enum AsepriteSystems {
+    /// Checks and updates aseprite sprite resources
+    CheckSprites,
+    /// Updates aseprite animations (frames)
     UpdateAnim,
 }
 
@@ -50,6 +54,7 @@ impl Plugin for AsepritePlugin {
             .add_system(
                 check_aseprite_data
                     .system()
+                    .label(AsepriteSystems::CheckSprites)
                     .before(AsepriteSystems::UpdateAnim),
             )
             .add_system(load_aseprites.system())
