@@ -41,8 +41,10 @@ pub struct AsepritePlugin;
 /// System stages of AsepritePlugin
 #[derive(Debug, SystemLabel, Clone, Hash, PartialEq, Eq)]
 pub enum AsepriteSystems {
-    /// Checks and updates aseprite sprite resources
+    /// Checks aseprite resources
     CheckSprites,
+    /// Loads aseprite resources
+    LoadSprites,
     /// Updates aseprite animations (frames)
     UpdateAnim,
 }
@@ -51,23 +53,25 @@ impl Plugin for AsepritePlugin {
     fn build(&self, app: &mut bevy::prelude::AppBuilder) {
         app.add_asset::<AsepriteImage>()
             .add_asset_loader(AsepriteLoader)
+            .add_system(load_aseprites.system().label(AsepriteSystems::LoadSprites))
             .add_system(
                 check_aseprite_data
                     .system()
                     .label(AsepriteSystems::CheckSprites)
-                    .before(AsepriteSystems::UpdateAnim),
+                    .after(AsepriteSystems::LoadSprites),
             )
-            .add_system(load_aseprites.system())
             .add_system(
                 update_animations
                     .system()
-                    .label(AsepriteSystems::UpdateAnim),
+                    .label(AsepriteSystems::UpdateAnim)
+                    .after(AsepriteSystems::CheckSprites),
             )
             .add_system(
                 update_spritesheet_anim
                     .system()
                     .after(AsepriteSystems::UpdateAnim),
-            );
+            )
+            .add_system(assign_texture_atlas.system());
     }
 }
 
@@ -93,15 +97,16 @@ fn update_animations(
         let mut added_time = Some(time.delta().as_millis() as u64);
 
         loop {
-            let (current_frame_idx, forward, rest_time, animation) = match &mut *aseprite_animation_state {
-                AsepriteAnimationState::Paused { .. } => break,
-                AsepriteAnimationState::Playing {
-                    current_frame,
-                    forward,
-                    time_elapsed,
-                    animation,
-                } => (current_frame, forward, time_elapsed, animation),
-            };
+            let (current_frame_idx, forward, rest_time, animation) =
+                match &mut *aseprite_animation_state {
+                    AsepriteAnimationState::Paused { .. } => break,
+                    AsepriteAnimationState::Playing {
+                        current_frame,
+                        forward,
+                        time_elapsed,
+                        animation,
+                    } => (current_frame, forward, time_elapsed, animation),
+                };
 
             let frame_info =
                 if let Some(info) = image.aseprite.frame_infos().get(*current_frame_idx) {
@@ -148,11 +153,13 @@ fn load_aseprites(
     new_aseprites: Query<(Entity, &AsepriteInfo), Added<AsepriteInfo>>,
 ) {
     for (entity, ase_info) in new_aseprites.iter() {
+        info!("loading aseprite");
         let path = ase_info
             .path()
             .strip_prefix(&asset_server_settings_folder.asset_folder)
             .unwrap();
 
+        // TODO should check if asset is not already loaded?
         let handle: Handle<AsepriteImage> = asset_server.load(path);
 
         commands.entity(entity).insert(handle);
@@ -229,6 +236,7 @@ fn check_aseprite_data(
     >,
 ) {
     for event in aseprite_image_events.iter() {
+        info!("ASEPRITE EVENT");
         match event {
             AssetEvent::Created { handle } | AssetEvent::Modified { handle } => {
                 {
@@ -255,7 +263,7 @@ fn check_aseprite_data(
                     existing_aseprites.iter_mut()
                 {
                     if &*aseprite_handle != handle {
-                        info!("Not the same handle");
+                        warn!("Not the same handle");
                         continue;
                     }
 
@@ -304,6 +312,53 @@ fn check_aseprite_data(
             }
             AssetEvent::Removed { .. } => (),
         }
+    }
+}
+
+fn assign_texture_atlas(
+    mut commands: Commands,
+    aseprite_image_assets: ResMut<Assets<AsepriteImage>>,
+    mut existing_aseprites: Query<
+        (
+            Entity,
+            &mut Handle<AsepriteImage>,
+        ),
+        (With<AsepriteAnimation>, Without<AsepriteSheetEntity>),
+    >,
+) {
+    for (aseprite_entity, mut aseprite_handle) in existing_aseprites.iter_mut() {
+        let image = if let Some(image) = aseprite_image_assets.get(&*aseprite_handle) {
+            image
+        } else {
+            info!("Not aseprite image");
+            continue;
+        };
+
+        let atlas_handle = if let Some(atlas_handle) = image.atlas.get_atlas() {
+            atlas_handle
+        } else {
+            info!("No texture atlas");
+            continue;
+        };
+
+        // Pretend we updated the handle, so we can listen to changes
+        aseprite_handle.deref_mut();
+
+        let sheet_entity = commands
+            .spawn_bundle(SpriteSheetBundle {
+                texture_atlas: atlas_handle.clone(),
+                ..Default::default()
+            })
+            .id();
+
+        commands
+            .entity(aseprite_entity)
+            .push_children(&[sheet_entity.clone()])
+            .insert(AsepriteSheetEntity(sheet_entity));
+
+        commands
+            .entity(sheet_entity)
+            .insert(TextureAtlasSprite::new(0));
     }
 }
 
@@ -636,7 +691,7 @@ impl AsepriteAnimation {
     /// Check if animation is using given tag
     pub fn is_tag(&self, t: AsepriteTag) -> bool {
         match self {
-            Self::Tag{ tag } => *tag == t,
+            Self::Tag { tag } => *tag == t,
             _ => false,
         }
     }
